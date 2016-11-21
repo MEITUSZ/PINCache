@@ -42,20 +42,28 @@ static const NSUInteger PINOperationQueueTestsMaxOperations = 5;
   return dispatch_time(DISPATCH_TIME_NOW, (int64_t)(PINCacheTestBlockTimeout * NSEC_PER_SEC));
 }
 
-- (void)testAllOperationsRun
+- (void)testAllOperationsRunAndReleased
 {
   const NSUInteger operationCount = 100;
+  NSPointerArray *weakReferences = [NSPointerArray weakObjectsPointerArray];
   dispatch_group_t group = dispatch_group_create();
   
-  for (NSUInteger count = 0; count < operationCount; count++) {
-    dispatch_group_enter(group);
-    [self.queue addOperation:^{
-      dispatch_group_leave(group);
-    } withPriority:PINOperationQueuePriorityDefault];
+  @autoreleasepool {
+    for (NSUInteger count = 0; count < operationCount; count++) {
+      dispatch_group_enter(group);
+      
+      dispatch_block_t operation = ^{
+        dispatch_group_leave(group);
+      };
+      
+      [weakReferences addPointer:(__bridge void * _Nullable)(operation)];
+      [self.queue addOperation:operation withPriority:PINOperationQueuePriorityDefault];
+    }
   }
   
   NSUInteger success = dispatch_group_wait(group, [self timeout]);
   XCTAssert(success == 0, @"Timed out before completing 100 operations");
+  XCTAssertEqual(0, weakReferences.allObjects.count);
 }
 
 - (void)testWaitUntilAllOperationsFinished
